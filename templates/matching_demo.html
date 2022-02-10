@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.js"></script>
+    <title>Matching Demo</title>
+    <script type="text/javascript">
+        // Returns a random integer between min and max (inclusive)
+        function randInt(min, max)
+        {
+            return min + Math.floor(Math.random() * (max - min + 1));
+        }
+
+        // Returns a random permutation of the numbers between min and max
+        // (inclusive) using the Fisher-Yates method
+        // (see https://en.wikipedia.org/wiki/Random_permutation#Fisher-Yates_shuffles)
+        function randPermutation(min, max)
+        {
+            let values = new Array(max - min + 1);
+            for(let i = 0; i < values.length; ++i)
+            {
+                values[i] = i + min;
+            }
+
+            for(let i = 0; i <= (values.length - 2); ++i)
+            {
+                let swapIndex = randInt(i, values.length - 1);
+                let temp = values[i];
+                values[i] = values[swapIndex];
+                values[swapIndex] = temp;
+            }
+
+            return values;
+        }
+
+        // Generates a list of numOrders random preference orderings, each of which
+        // is an ordering of numOrders total indices (with sub-lists used to indicate
+        // tie groups).
+        function randPrefOrders(numOrders)
+        {
+            let prefs = [];
+
+            for(let i = 0; i < numOrders; ++i)
+            {
+                let valueList = randPermutation(0, numOrders - 1);
+                let result = [];
+
+                let baseIndex = 0;
+                while(baseIndex < valueList.length)
+                {
+                    let size = (Math.random() <= 0.1 ? 2 : 1);
+                    result.push(valueList.slice(baseIndex, baseIndex + size));
+                    baseIndex += size;
+                }
+
+                prefs.push(result);
+            }
+
+            return prefs;
+        }
+
+        // Event handler for the random matching form submission: generates random preference orders,
+        // sends a request to the relevant endpoint to solve the super-stable-matching problem, and
+        // displays the results in the page's two tables.
+        function onRandMatchingSubmit(event)
+        {
+            event.preventDefault();
+
+            // Generate two sets of random orders
+            let numMembers = parseInt($('#num-nodes-text').val());
+            let payload = {g1Prefs: randPrefOrders(numMembers), g2Prefs: randPrefOrders(numMembers)};
+
+            // Send a request to solve the matching problem
+            $.post({
+                url: '/api/solveMatching',
+                data: JSON.stringify(payload),
+                contentType: 'application/json'
+            }).done(data => {
+                let G1ToG2Map = {}, G2ToG1Map = {};
+
+                // If a matching was found, it was returned as a list of pairs;
+                // parse these into two maps for easier use.
+                if(data.mapping != null)
+                {
+                    data.mapping.forEach(elem => {
+                        G1ToG2Map[elem[0]] = elem[1];
+                        G2ToG1Map[elem[1]] = elem[0];
+                    });
+                }
+
+                // Generate the lists of DOM nodes to be added to both tables.
+                // These are lists of table rows containing the index of the current
+                // element, the randomly-generated preference list for it, and its partner
+                // mapped in the opposite group, if one was found.
+                let g1NodeList = payload.g1Prefs.map((value, index) =>
+                $(`<tr><td>${index}</td><td>${JSON.stringify(value)}</td>
+                    <td>${index in G1ToG2Map ? G1ToG2Map[index] : 'None'}</td></tr>`));
+
+                let g2NodeList = payload.g2Prefs.map((value, index) =>
+                $(`<tr><td>${index}</td><td>${JSON.stringify(value)}</td>
+                    <td>${index in G2ToG1Map ? G2ToG1Map[index] : 'None'}</td></tr>`));
+
+                // Clear any existing rows, add the new rows, and show the results
+                $('#g1-table').children('tbody').empty().append(g1NodeList);
+                $('#g2-table').children('tbody').empty().append(g2NodeList);
+                $('#matching-results').show();
+            });
+        }
+
+        // Initialization code (runs on page load)
+        $(() => {
+            // Set up the submit event handler
+            $('#rand-matching-form').submit(onRandMatchingSubmit);
+        });
+    </script>
+</head>
+<body>
+    <h1>Matching Demo</h1>
+    <form id="rand-matching-form">
+        <label for="num-nodes-text">Number of nodes:</label>
+        <input id="num-nodes-text" type="number" min="1" required>
+        <button id="rand-matching-submit" type="submit">Generate random matching</button>
+    </form>
+    <div id="matching-results" style="display: none;">
+        <h2>Group 1</h2>
+        <table id="g1-table">
+            <thead>
+                <tr>
+                    <th>Index</th>
+                    <th>Preference List</th>
+                    <th>Assigned Partner</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <h2>Group 2</h2>
+        <table id="g2-table">
+            <thead>
+                <tr>
+                    <th>Index</th>
+                    <th>Preference List</th>
+                    <th>Assigned Partner</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</body>
+</html>
